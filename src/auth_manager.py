@@ -191,7 +191,7 @@ class AuthManager:
     def validate_api_keys(self, apollo_key: str, notion_token: str,
                          notion_db_id: str, ai_key: str = None) -> Tuple[bool, str]:
         """
-        Validate API keys before registration
+        Validate API keys before registration and setup Notion database schema
 
         Returns:
             (valid, message)
@@ -200,19 +200,56 @@ class AuthManager:
             # Import clients for validation
             from .apollo_client import ApolloClient
             from notion_client import Client
+            from .notion_schema import NotionSchemaManager
+
+            messages = []
 
             # Test Apollo
             apollo = ApolloClient(apollo_key)
             test_company = apollo.search_company("Google")
             if not test_company:
-                return False, "Apollo API key invalid"
+                return False, "❌ Apollo API key invalid"
+            messages.append("✅ Apollo API key validated")
 
-            # Test Notion
+            # Test Notion - basic access
             client = Client(auth=notion_token)
             try:
                 client.databases.query(database_id=notion_db_id, page_size=1)
+                messages.append("✅ Notion credentials validated")
             except Exception as e:
-                return False, f"Notion credentials invalid: {str(e)}"
+                return False, f"❌ Notion credentials invalid: {str(e)}"
+
+            # Validate and setup Notion database schema
+            try:
+                schema_manager = NotionSchemaManager(notion_token, notion_db_id)
+
+                # Check if database exists
+                exists, exist_msg = schema_manager.check_database_exists()
+                if not exists:
+                    return False, f"❌ {exist_msg}"
+                messages.append(f"✅ {exist_msg}")
+
+                # Validate current schema
+                is_valid, validation_msg, missing = schema_manager.validate_schema()
+
+                if not is_valid:
+                    # Auto-setup schema by adding missing properties
+                    messages.append(f"⚙️ Setting up database schema...")
+                    success, setup_msg, added = schema_manager.setup_schema(include_optional=True)
+
+                    if success:
+                        if added:
+                            messages.append(f"✅ {setup_msg}")
+                            messages.append(f"   Added properties: {', '.join(added)}")
+                        else:
+                            messages.append(f"✅ {setup_msg}")
+                    else:
+                        return False, f"❌ Schema setup failed: {setup_msg}"
+                else:
+                    messages.append("✅ Database schema validated")
+
+            except Exception as e:
+                return False, f"❌ Notion schema setup error: {str(e)}"
 
             # Test AI key if provided
             if ai_key:
@@ -222,18 +259,20 @@ class AuthManager:
                     openai.api_key = ai_key
                     try:
                         openai.models.list()
+                        messages.append("✅ OpenAI API key validated")
                     except Exception as e:
-                        return False, f"OpenAI API key invalid: {str(e)}"
+                        return False, f"❌ OpenAI API key invalid: {str(e)}"
                 else:
                     # Gemini
                     import google.generativeai as genai
                     try:
                         genai.configure(api_key=ai_key)
                         genai.list_models()
+                        messages.append("✅ Gemini API key validated")
                     except Exception as e:
-                        return False, f"Gemini API key invalid: {str(e)}"
+                        return False, f"❌ Gemini API key invalid: {str(e)}"
 
-            return True, "All API keys validated successfully!"
+            return True, "\n".join(messages)
 
         except Exception as e:
-            return False, f"Validation error: {str(e)}"
+            return False, f"❌ Validation error: {str(e)}"

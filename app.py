@@ -514,6 +514,7 @@ def show_register_screen():
 
         st.markdown("### 🔑 API Keys")
         st.caption("🔒 Your keys will be encrypted with industry-standard encryption")
+        st.caption("✨ We'll automatically set up your Notion database with the required fields")
 
         apollo_key = st.text_input(
             "Apollo.io API Key",
@@ -533,7 +534,7 @@ def show_register_screen():
             "Notion Database ID",
             type="password",
             placeholder="32-character database ID",
-            help="Copy from your Notion database URL"
+            help="Copy from your Notion database URL - we'll auto-add any missing properties"
         )
 
         st.markdown("### 🤖 AI API Key (Choose one)")
@@ -587,19 +588,25 @@ def show_register_screen():
                 return
 
             # Validate and register
-            with st.spinner("🔍 Validating API keys..."):
+            with st.spinner("🔍 Validating API keys and setting up Notion database..."):
                 try:
                     auth = AuthManager()
 
-                    # Validate API keys first
+                    # Validate API keys first (includes Notion schema auto-setup)
                     valid, validation_msg = auth.validate_api_keys(
                         apollo_key, notion_token, notion_db_id, ai_key
                     )
 
                     if not valid:
-                        st.error(f"❌ {validation_msg}")
+                        st.error(validation_msg)
                         st.info("💡 Please check your API keys and try again")
                         return
+
+                    # Show detailed validation results
+                    st.success("✅ Validation Complete!")
+                    for line in validation_msg.split('\n'):
+                        if line.strip():
+                            st.text(line)
 
                     # Register user
                     ai_prov = "openai" if ai_provider.startswith("OpenAI") else "gemini"
