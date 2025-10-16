@@ -21,6 +21,8 @@ load_dotenv()
 from src.apollo_client import ApolloClient
 from src.notion_client import NotionClient
 from src.llm_helper import AITargeting
+from src.auth_manager import AuthManager
+from datetime import datetime, timedelta
 
 # Page config
 st.set_page_config(
@@ -373,69 +375,145 @@ def enrich_contact_flexible(row, apollo, notion):
         }
 
 
-def validate_user_keys(apollo_key, notion_token, notion_db_id, ai_key=None):
-    """Validate user's API keys by testing connections"""
-    try:
-        # Test Apollo
-        apollo = ApolloClient(apollo_key)
-        # Simple test - search for a common company
-        test_company = apollo.search_company("Google")
-        if not test_company:
-            return False, "Apollo API key invalid - couldn't connect to Apollo.io"
+def check_session_timeout():
+    """Check if session has timed out (20 minutes)"""
+    if 'last_activity' in st.session_state:
+        timeout_minutes = int(os.getenv('SESSION_TIMEOUT_MINUTES', 20))
+        last_activity = st.session_state.last_activity
+        time_elapsed = datetime.now() - last_activity
 
-        # Test Notion
-        notion = NotionClient(notion_token, notion_db_id)
-        # Try to query the database
-        from notion_client import Client
-        client = Client(auth=notion_token)
-        try:
-            client.databases.query(database_id=notion_db_id, page_size=1)
-        except Exception as e:
-            return False, f"Notion credentials invalid - {str(e)}"
+        if time_elapsed > timedelta(minutes=timeout_minutes):
+            # Session expired
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            return True
 
-        # Test AI (optional)
-        if ai_key:
-            if ai_key.startswith('sk-'):
-                # OpenAI key
-                import openai
-                openai.api_key = ai_key
-                try:
-                    openai.models.list()
-                except Exception as e:
-                    return False, f"OpenAI API key invalid - {str(e)}"
-            else:
-                # Gemini key
-                import google.generativeai as genai
-                try:
-                    genai.configure(api_key=ai_key)
-                    genai.list_models()
-                except Exception as e:
-                    return False, f"Gemini API key invalid - {str(e)}"
-
-        return True, "All API keys validated successfully!"
-
-    except Exception as e:
-        return False, f"Validation error: {str(e)}"
+    # Update last activity
+    st.session_state.last_activity = datetime.now()
+    return False
 
 
-def show_setup_screen():
-    """Show login and API key setup screen"""
-    st.markdown('<p class="main-header">🏥 Ping CRM - Setup</p>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-header">Enter your email and API keys to get started</p>', unsafe_allow_html=True)
+def show_login_screen():
+    """Show login screen for existing users"""
+    st.markdown('<p class="main-header">🏥 Ping CRM - Login</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-header">Welcome back! Sign in to continue</p>', unsafe_allow_html=True)
 
     st.markdown("---")
 
-    with st.form("setup_form"):
-        st.markdown("### 👤 Your Information")
+    with st.form("login_form"):
+        st.markdown("### 🔐 Login Credentials")
 
-        user_email = st.text_input(
+        email = st.text_input(
             "Email Address",
             placeholder="your.email@company.com",
-            help="Your email for identification"
+            help="Your registered email address"
         )
 
+        password = st.text_input(
+            "Password",
+            type="password",
+            placeholder="Enter your password",
+            help="Minimum 8 characters"
+        )
+
+        st.markdown("---")
+
+        col1, col2 = st.columns([1, 1])
+
+        with col1:
+            login_button = st.form_submit_button(
+                "🔓 Login",
+                type="primary",
+                use_container_width=True
+            )
+
+        with col2:
+            register_button = st.form_submit_button(
+                "📝 New User? Register",
+                use_container_width=True
+            )
+
+        if login_button:
+            if not email or not password:
+                st.error("❌ Please enter both email and password")
+                return
+
+            # Attempt login
+            with st.spinner("🔐 Authenticating..."):
+                try:
+                    auth = AuthManager()
+                    success, message, user_data = auth.login_user(email, password)
+
+                    if success:
+                        st.success(f"✅ {message}")
+                        st.balloons()
+
+                        # Store in session state
+                        st.session_state.user_email = user_data['email']
+                        st.session_state.logged_in = True
+                        st.session_state.last_activity = datetime.now()
+
+                        # Set environment variables for this session
+                        os.environ['APOLLO_API_KEY'] = user_data['apollo_key']
+                        os.environ['NOTION_TOKEN'] = user_data['notion_token']
+                        os.environ['NOTION_DB_ID'] = user_data['notion_db_id']
+
+                        if user_data.get('ai_key'):
+                            if user_data['ai_provider'] == 'openai':
+                                os.environ['OPENAI_API_KEY'] = user_data['ai_key']
+                            else:
+                                os.environ['GEMINI_API_KEY'] = user_data['ai_key']
+
+                        st.session_state.ai_provider = user_data['ai_provider']
+
+                        time.sleep(1)  # Brief pause to show success message
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {message}")
+                        st.info("💡 Check your email and password, or register if you're new")
+
+                except Exception as e:
+                    st.error(f"❌ Login error: {str(e)}")
+
+        if register_button:
+            st.session_state.show_register = True
+            st.rerun()
+
+
+def show_register_screen():
+    """Show registration screen for new users"""
+    st.markdown('<p class="main-header">🏥 Ping CRM - Register</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-header">Create your account - your API keys are encrypted and secure</p>', unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    with st.form("register_form"):
+        st.markdown("### 👤 Account Information")
+
+        email = st.text_input(
+            "Email Address",
+            placeholder="your.email@company.com",
+            help="Your email for login"
+        )
+
+        col1, col2 = st.columns(2)
+        with col1:
+            password = st.text_input(
+                "Password",
+                type="password",
+                placeholder="Minimum 8 characters",
+                help="Choose a strong password"
+            )
+        with col2:
+            password_confirm = st.text_input(
+                "Confirm Password",
+                type="password",
+                placeholder="Re-enter password",
+                help="Must match your password"
+            )
+
         st.markdown("### 🔑 API Keys")
-        st.caption("All keys are stored only in your session and never saved permanently")
+        st.caption("🔒 Your keys will be encrypted with industry-standard encryption")
 
         apollo_key = st.text_input(
             "Apollo.io API Key",
@@ -478,73 +556,130 @@ def show_setup_screen():
         col1, col2 = st.columns([1, 1])
 
         with col1:
-            validate_button = st.form_submit_button(
-                "🔍 Validate & Continue",
+            register_button = st.form_submit_button(
+                "🚀 Register & Login",
                 type="primary",
                 use_container_width=True
             )
 
         with col2:
-            if st.form_submit_button("📖 Need Help?", use_container_width=True):
-                st.info("Check QUICKSTART_FOR_FRIEND.md for detailed setup instructions")
+            back_button = st.form_submit_button(
+                "⬅️ Back to Login",
+                use_container_width=True
+            )
 
-        if validate_button:
-            if not user_email or '@' not in user_email:
+        if register_button:
+            # Validate inputs
+            if not email or '@' not in email:
                 st.error("❌ Please enter a valid email address")
-                return False
+                return
+
+            if password != password_confirm:
+                st.error("❌ Passwords do not match")
+                return
+
+            if len(password) < 8:
+                st.error("❌ Password must be at least 8 characters")
+                return
 
             if not all([apollo_key, notion_token, notion_db_id, ai_key]):
                 st.error("❌ Please fill in all API keys")
-                return False
+                return
 
-            # Validate keys
-            with st.spinner("🔍 Validating your API keys..."):
-                success, message = validate_user_keys(apollo_key, notion_token, notion_db_id, ai_key)
+            # Validate and register
+            with st.spinner("🔍 Validating API keys..."):
+                try:
+                    auth = AuthManager()
 
-            if success:
-                st.success(f"✅ {message}")
-                st.balloons()
+                    # Validate API keys first
+                    valid, validation_msg = auth.validate_api_keys(
+                        apollo_key, notion_token, notion_db_id, ai_key
+                    )
 
-                # Store in session state
-                st.session_state.user_email = user_email
-                st.session_state.user_setup_complete = True
-                st.session_state.apollo_key = apollo_key
-                st.session_state.notion_token = notion_token
-                st.session_state.notion_db_id = notion_db_id
-                st.session_state.ai_key = ai_key
-                st.session_state.ai_provider = "openai" if ai_provider.startswith("OpenAI") else "gemini"
+                    if not valid:
+                        st.error(f"❌ {validation_msg}")
+                        st.info("💡 Please check your API keys and try again")
+                        return
 
-                # Set environment variables for this session
-                os.environ['APOLLO_API_KEY'] = apollo_key
-                os.environ['NOTION_TOKEN'] = notion_token
-                os.environ['NOTION_DB_ID'] = notion_db_id
+                    # Register user
+                    ai_prov = "openai" if ai_provider.startswith("OpenAI") else "gemini"
+                    success, message = auth.register_user(
+                        email, password,
+                        apollo_key, notion_token, notion_db_id,
+                        ai_key, ai_prov
+                    )
 
-                if st.session_state.ai_provider == "openai":
-                    os.environ['OPENAI_API_KEY'] = ai_key
-                else:
-                    os.environ['GEMINI_API_KEY'] = ai_key
+                    if success:
+                        st.success(f"✅ {message}")
+                        st.success("🎉 Account created! Logging you in...")
+                        st.balloons()
 
-                st.rerun()
-            else:
-                st.error(f"❌ {message}")
-                st.info("💡 Double-check your API keys and try again")
-                return False
+                        # Auto-login after registration
+                        _, _, user_data = auth.login_user(email, password)
 
-    return False
+                        # Store in session state
+                        st.session_state.user_email = user_data['email']
+                        st.session_state.logged_in = True
+                        st.session_state.last_activity = datetime.now()
+
+                        # Set environment variables
+                        os.environ['APOLLO_API_KEY'] = user_data['apollo_key']
+                        os.environ['NOTION_TOKEN'] = user_data['notion_token']
+                        os.environ['NOTION_DB_ID'] = user_data['notion_db_id']
+
+                        if user_data.get('ai_key'):
+                            if user_data['ai_provider'] == 'openai':
+                                os.environ['OPENAI_API_KEY'] = user_data['ai_key']
+                            else:
+                                os.environ['GEMINI_API_KEY'] = user_data['ai_key']
+
+                        st.session_state.ai_provider = user_data['ai_provider']
+
+                        time.sleep(2)  # Show success message
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {message}")
+
+                except Exception as e:
+                    st.error(f"❌ Registration error: {str(e)}")
+
+        if back_button:
+            if 'show_register' in st.session_state:
+                del st.session_state.show_register
+            st.rerun()
 
 
 def main():
     """Main app"""
 
-    # Check if user has completed setup
-    if 'user_setup_complete' not in st.session_state:
-        show_setup_screen()
+    # Check if user is logged in
+    if 'logged_in' not in st.session_state or not st.session_state.logged_in:
+        # Show register or login screen
+        if st.session_state.get('show_register', False):
+            show_register_screen()
+        else:
+            show_login_screen()
+        return
+
+    # Check session timeout
+    if check_session_timeout():
+        st.warning("⏱️ Your session has expired due to inactivity. Please login again.")
+        time.sleep(2)
+        st.rerun()
         return
 
     # Show user info in sidebar
     with st.sidebar:
         st.markdown(f"### 👤 Logged in as:")
         st.caption(st.session_state.user_email)
+
+        # Session timeout indicator
+        if 'last_activity' in st.session_state:
+            timeout_minutes = int(os.getenv('SESSION_TIMEOUT_MINUTES', 20))
+            last_activity = st.session_state.last_activity
+            time_elapsed = datetime.now() - last_activity
+            minutes_remaining = timeout_minutes - int(time_elapsed.total_seconds() / 60)
+            st.caption(f"⏱️ Session expires in: {minutes_remaining} min")
 
         if st.button("🚪 Logout", use_container_width=True):
             # Clear all session state
