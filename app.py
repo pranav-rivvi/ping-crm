@@ -1224,96 +1224,119 @@ def main():
                     st.session_state.single_lookup_person = person_data
                     st.session_state.single_lookup_company = company_data
                     st.session_state.single_lookup_method = search_method
-
-                    # Display results
-                    st.success(f"✅ Found via {search_method}!")
-
-                    # Display person details
-                    st.markdown("#### 👤 Contact Details")
-                    col1, col2 = st.columns(2)
-
-                    with col1:
-                        st.markdown("**Personal Info:**")
-                        st.markdown(f"• **Name:** {person_data.get('name', 'N/A')}")
-                        st.markdown(f"• **Title:** {person_data.get('title', 'N/A')}")
-                        st.markdown(f"• **Seniority:** {person_data.get('seniority', 'N/A').replace('_', ' ').title()}")
-                        st.markdown(f"• **Email:** {person_data.get('email', 'N/A')}")
-                        st.markdown(f"• **Phone:** {person_data.get('phone', 'N/A')}")
-
-                    with col2:
-                        st.markdown("**Location & Links:**")
-                        st.markdown(f"• **City:** {person_data.get('city', 'N/A')}")
-                        st.markdown(f"• **State:** {person_data.get('state', 'N/A')}")
-                        st.markdown(f"• **Country:** {person_data.get('country', 'N/A')}")
-                        linkedin_url = person_data.get('linkedin_url', 'N/A')
-                        if linkedin_url != 'N/A':
-                            st.markdown(f"• **LinkedIn:** [{linkedin_url}]({linkedin_url})")
-                        else:
-                            st.markdown(f"• **LinkedIn:** N/A")
-
-                    # Display company details if available
-                    if company_data:
-                        st.markdown("#### 🏢 Company Details")
-                        col1, col2 = st.columns(2)
-
-                        with col1:
-                            st.markdown("**Company Info:**")
-                            st.markdown(f"• **Name:** {company_data.get('name', 'N/A')}")
-                            st.markdown(f"• **Industry:** {company_data.get('industry', 'N/A')}")
-                            st.markdown(f"• **Size:** {company_data.get('estimated_num_employees', 'N/A')} employees")
-                            website = company_data.get('website_url', 'N/A')
-                            if website != 'N/A':
-                                st.markdown(f"• **Website:** [{website}]({website})")
-                            else:
-                                st.markdown(f"• **Website:** N/A")
-
-                        with col2:
-                            st.markdown("**Additional Info:**")
-                            st.markdown(f"• **Location:** {company_data.get('city', 'N/A')}, {company_data.get('state', 'N/A')}")
-                            st.markdown(f"• **Revenue:** {company_data.get('estimated_annual_revenue', 'N/A')}")
-                            linkedin_url = company_data.get('linkedin_url', 'N/A')
-                            if linkedin_url != 'N/A':
-                                st.markdown(f"• **LinkedIn:** [{linkedin_url}]({linkedin_url})")
-                            else:
-                                st.markdown(f"• **LinkedIn:** N/A")
-
-                    # Add to Notion button
-                    st.markdown("")  # Spacing
-                    col1, col2 = st.columns([1, 3])
-                    with col1:
-                        add_to_notion_button = st.button(
-                            "➕ Add to Notion",
-                            type="primary",
-                            use_container_width=True,
-                            key="add_single_to_notion"
-                        )
-
-                    if add_to_notion_button:
-                        # Check if already exists
-                        existing = st.session_state.notion.find_contact(
-                            person_data['name'],
-                            company_data.get('name', '') if company_data else ''
-                        )
-
-                        if existing:
-                            st.warning(f"⚠️ Contact already exists in Notion: {person_data['name']}")
-                        else:
-                            # Add to Notion
-                            success, action = st.session_state.notion.upsert_contact(
-                                contact_name=person_data['name'],
-                                company_name=company_data.get('name', '') if company_data else '',
-                                enriched_data=person_data,
-                                company_data=company_data
-                            )
-
-                            if success:
-                                st.success(f"✅ Successfully {action}d **{person_data['name']}** to Notion!")
-                            else:
-                                st.error("❌ Failed to add contact to Notion")
-
+                    st.session_state.show_single_lookup_results = True
                 else:
-                    st.error(f"❌ No contact found via {search_method}")
+                    st.session_state.show_single_lookup_results = False
+                    st.error(f"❌ No contact found via {search_method if search_method else 'provided input'}")
                     st.info("💡 Try a different LinkedIn URL or email address")
+
+        # Display results if available (persists across button clicks)
+        if st.session_state.get('show_single_lookup_results', False):
+            person_data = st.session_state.single_lookup_person
+            company_data = st.session_state.single_lookup_company
+            search_method = st.session_state.single_lookup_method
+
+            # Display results
+            st.success(f"✅ Found via {search_method}!")
+
+            # Display person details
+            st.markdown("#### 👤 Contact Details")
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.markdown("**Personal Info:**")
+                st.markdown(f"• **Name:** {person_data.get('name', 'N/A')}")
+                st.markdown(f"• **Title:** {person_data.get('title', 'N/A')}")
+                st.markdown(f"• **Seniority:** {person_data.get('seniority', 'N/A').replace('_', ' ').title()}")
+                st.markdown(f"• **Email:** {person_data.get('email', 'N/A')}")
+                st.markdown(f"• **Phone:** {person_data.get('phone', 'N/A')}")
+
+            with col2:
+                st.markdown("**Location & Links:**")
+                st.markdown(f"• **City:** {person_data.get('city', 'N/A')}")
+                st.markdown(f"• **State:** {person_data.get('state', 'N/A')}")
+                st.markdown(f"• **Country:** {person_data.get('country', 'N/A')}")
+                linkedin_url = person_data.get('linkedin_url', 'N/A')
+                if linkedin_url != 'N/A':
+                    st.markdown(f"• **LinkedIn:** [{linkedin_url}]({linkedin_url})")
+                else:
+                    st.markdown(f"• **LinkedIn:** N/A")
+
+            # Display company details if available
+            if company_data:
+                st.markdown("#### 🏢 Company Details")
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    st.markdown("**Company Info:**")
+                    st.markdown(f"• **Name:** {company_data.get('name', 'N/A')}")
+                    st.markdown(f"• **Industry:** {company_data.get('industry', 'N/A')}")
+                    st.markdown(f"• **Size:** {company_data.get('estimated_num_employees', 'N/A')} employees")
+                    website = company_data.get('website_url', 'N/A')
+                    if website != 'N/A':
+                        st.markdown(f"• **Website:** [{website}]({website})")
+                    else:
+                        st.markdown(f"• **Website:** N/A")
+
+                with col2:
+                    st.markdown("**Additional Info:**")
+                    st.markdown(f"• **Location:** {company_data.get('city', 'N/A')}, {company_data.get('state', 'N/A')}")
+                    st.markdown(f"• **Revenue:** {company_data.get('estimated_annual_revenue', 'N/A')}")
+                    linkedin_url = company_data.get('linkedin_url', 'N/A')
+                    if linkedin_url != 'N/A':
+                        st.markdown(f"• **LinkedIn:** [{linkedin_url}]({linkedin_url})")
+                    else:
+                        st.markdown(f"• **LinkedIn:** N/A")
+
+            # Add to Notion button (now outside the get_details_button block)
+            st.markdown("")  # Spacing
+            col1, col2, col3 = st.columns([1, 1, 2])
+
+            with col1:
+                add_to_notion_button = st.button(
+                    "➕ Add to Notion",
+                    type="primary",
+                    use_container_width=True,
+                    key="add_single_to_notion"
+                )
+
+            with col2:
+                if st.button("🔄 New Search", use_container_width=True, key="new_single_search"):
+                    # Clear results
+                    st.session_state.show_single_lookup_results = False
+                    if 'single_lookup_person' in st.session_state:
+                        del st.session_state.single_lookup_person
+                    if 'single_lookup_company' in st.session_state:
+                        del st.session_state.single_lookup_company
+                    if 'single_lookup_method' in st.session_state:
+                        del st.session_state.single_lookup_method
+                    st.rerun()
+
+            if add_to_notion_button:
+                # Check if already exists
+                existing = st.session_state.notion.find_contact(
+                    person_data['name'],
+                    company_data.get('name', '') if company_data else ''
+                )
+
+                if existing:
+                    st.warning(f"⚠️ Contact already exists in Notion: {person_data['name']}")
+                else:
+                    # Add to Notion
+                    success, action = st.session_state.notion.upsert_contact(
+                        contact_name=person_data['name'],
+                        company_name=company_data.get('name', '') if company_data else '',
+                        enriched_data=person_data,
+                        company_data=company_data
+                    )
+
+                    if success:
+                        st.success(f"✅ Successfully {action}d **{person_data['name']}** to Notion!")
+                        st.balloons()
+                        # Clear results after successful add
+                        st.session_state.show_single_lookup_results = False
+                    else:
+                        st.error("❌ Failed to add contact to Notion")
 
         # Divider before CSV section
         st.markdown("---")
