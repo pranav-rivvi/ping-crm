@@ -1,0 +1,37 @@
+# Environment Variables
+.env
+
+# Streamlit Secrets
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Data files
+*.csv
+!companies.csv.example
+
+# Cache
+*.db
+*.sqlite
+cache/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

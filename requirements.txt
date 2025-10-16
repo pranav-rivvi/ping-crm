@@ -1,0 +1,28 @@
+# HLTH 2025 CRM - MVP Requirements
+# Python 3.11+
+
+# Notion Integration
+notion-client==2.2.1
+
+# HTTP Requests
+requests==2.31.0
+
+# Data Processing (Python 3.13 compatible)
+pandas>=2.2.0
+
+# Environment Variables
+python-dotenv==1.0.0
+
+# CLI & Output
+click==8.1.7
+rich==13.7.0
+
+# Rate Limiting
+tenacity==8.2.3
+
+# Web UI
+streamlit>=1.28.0
+
+# AI / LLM (for company targeting)
+openai>=1.12.0
+google-generativeai>=0.3.0
