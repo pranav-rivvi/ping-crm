@@ -20,17 +20,26 @@ class AuthManager:
 
         Args:
             encryption_key: Base64-encoded Fernet key for encrypting API keys
-                          If not provided, will look for ENCRYPTION_KEY env var
+                          If not provided, will look for ENCRYPTION_KEY env var or Streamlit secrets
         """
         self.db = DatabaseManager()
 
         # Get or generate encryption key
         if encryption_key is None:
+            # Try environment variable first
             encryption_key = os.getenv('ENCRYPTION_KEY')
+
+            # Try Streamlit secrets as fallback
+            if encryption_key is None:
+                try:
+                    import streamlit as st
+                    encryption_key = st.secrets.get('ENCRYPTION_KEY', None)
+                except Exception:
+                    pass
 
         if encryption_key is None:
             raise ValueError(
-                "ENCRYPTION_KEY not found in environment. "
+                "ENCRYPTION_KEY not found in environment or Streamlit secrets. "
                 "Generate one with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
             )
 
