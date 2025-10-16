@@ -373,32 +373,203 @@ def enrich_contact_flexible(row, apollo, notion):
         }
 
 
+def validate_user_keys(apollo_key, notion_token, notion_db_id, ai_key=None):
+    """Validate user's API keys by testing connections"""
+    try:
+        # Test Apollo
+        apollo = ApolloClient(apollo_key)
+        # Simple test - search for a common company
+        test_company = apollo.search_company("Google")
+        if not test_company:
+            return False, "Apollo API key invalid - couldn't connect to Apollo.io"
+
+        # Test Notion
+        notion = NotionClient(notion_token, notion_db_id)
+        # Try to query the database
+        from notion_client import Client
+        client = Client(auth=notion_token)
+        try:
+            client.databases.query(database_id=notion_db_id, page_size=1)
+        except Exception as e:
+            return False, f"Notion credentials invalid - {str(e)}"
+
+        # Test AI (optional)
+        if ai_key:
+            if ai_key.startswith('sk-'):
+                # OpenAI key
+                import openai
+                openai.api_key = ai_key
+                try:
+                    openai.models.list()
+                except Exception as e:
+                    return False, f"OpenAI API key invalid - {str(e)}"
+            else:
+                # Gemini key
+                import google.generativeai as genai
+                try:
+                    genai.configure(api_key=ai_key)
+                    genai.list_models()
+                except Exception as e:
+                    return False, f"Gemini API key invalid - {str(e)}"
+
+        return True, "All API keys validated successfully!"
+
+    except Exception as e:
+        return False, f"Validation error: {str(e)}"
+
+
+def show_setup_screen():
+    """Show login and API key setup screen"""
+    st.markdown('<p class="main-header">🏥 Ping CRM - Setup</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-header">Enter your email and API keys to get started</p>', unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    with st.form("setup_form"):
+        st.markdown("### 👤 Your Information")
+
+        user_email = st.text_input(
+            "Email Address",
+            placeholder="your.email@company.com",
+            help="Your email for identification"
+        )
+
+        st.markdown("### 🔑 API Keys")
+        st.caption("All keys are stored only in your session and never saved permanently")
+
+        apollo_key = st.text_input(
+            "Apollo.io API Key",
+            type="password",
+            placeholder="Enter your Apollo API key",
+            help="Get from: https://app.apollo.io/#/settings/integrations/api"
+        )
+
+        notion_token = st.text_input(
+            "Notion Integration Token",
+            type="password",
+            placeholder="secret_...",
+            help="Get from: https://www.notion.so/my-integrations"
+        )
+
+        notion_db_id = st.text_input(
+            "Notion Database ID",
+            type="password",
+            placeholder="32-character database ID",
+            help="Copy from your Notion database URL"
+        )
+
+        st.markdown("### 🤖 AI API Key (Choose one)")
+
+        ai_provider = st.radio(
+            "AI Provider",
+            ["OpenAI (Recommended)", "Google Gemini"],
+            horizontal=True
+        )
+
+        ai_key = st.text_input(
+            f"{ai_provider.split()[0]} API Key",
+            type="password",
+            placeholder="sk-... (OpenAI) or your Gemini key",
+            help="For AI-powered company targeting"
+        )
+
+        st.markdown("---")
+
+        col1, col2 = st.columns([1, 1])
+
+        with col1:
+            validate_button = st.form_submit_button(
+                "🔍 Validate & Continue",
+                type="primary",
+                use_container_width=True
+            )
+
+        with col2:
+            if st.form_submit_button("📖 Need Help?", use_container_width=True):
+                st.info("Check QUICKSTART_FOR_FRIEND.md for detailed setup instructions")
+
+        if validate_button:
+            if not user_email or '@' not in user_email:
+                st.error("❌ Please enter a valid email address")
+                return False
+
+            if not all([apollo_key, notion_token, notion_db_id, ai_key]):
+                st.error("❌ Please fill in all API keys")
+                return False
+
+            # Validate keys
+            with st.spinner("🔍 Validating your API keys..."):
+                success, message = validate_user_keys(apollo_key, notion_token, notion_db_id, ai_key)
+
+            if success:
+                st.success(f"✅ {message}")
+                st.balloons()
+
+                # Store in session state
+                st.session_state.user_email = user_email
+                st.session_state.user_setup_complete = True
+                st.session_state.apollo_key = apollo_key
+                st.session_state.notion_token = notion_token
+                st.session_state.notion_db_id = notion_db_id
+                st.session_state.ai_key = ai_key
+                st.session_state.ai_provider = "openai" if ai_provider.startswith("OpenAI") else "gemini"
+
+                # Set environment variables for this session
+                os.environ['APOLLO_API_KEY'] = apollo_key
+                os.environ['NOTION_TOKEN'] = notion_token
+                os.environ['NOTION_DB_ID'] = notion_db_id
+
+                if st.session_state.ai_provider == "openai":
+                    os.environ['OPENAI_API_KEY'] = ai_key
+                else:
+                    os.environ['GEMINI_API_KEY'] = ai_key
+
+                st.rerun()
+            else:
+                st.error(f"❌ {message}")
+                st.info("💡 Double-check your API keys and try again")
+                return False
+
+    return False
+
+
 def main():
     """Main app"""
 
+    # Check if user has completed setup
+    if 'user_setup_complete' not in st.session_state:
+        show_setup_screen()
+        return
+
+    # Show user info in sidebar
+    with st.sidebar:
+        st.markdown(f"### 👤 Logged in as:")
+        st.caption(st.session_state.user_email)
+
+        if st.button("🚪 Logout", use_container_width=True):
+            # Clear all session state
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.rerun()
+
+        st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+
     # Header
-    st.markdown('<p class="main-header">🏥 HLTH 2025 CRM - Bulk Enrichment</p>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-header">Upload CSV with contacts to enrich from Apollo.io and sync to Notion</p>', unsafe_allow_html=True)
+    st.markdown('<p class="main-header">🏥 Ping CRM - Contact Enrichment</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-header">AI-powered contact enrichment with Apollo.io and Notion</p>', unsafe_allow_html=True)
 
     # Sidebar - Professional UX Design
     with st.sidebar:
         # Logo/Brand Section
-        st.markdown("### 🏥 HLTH 2025 CRM")
+        st.markdown("### 🏥 Ping CRM")
         st.caption("Intelligent Contact Enrichment Platform")
 
         st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
         # System Status
         st.markdown("#### System Status")
-        env_ok, missing = validate_env()
-
-        if env_ok:
-            st.markdown('<div class="status-success">✅ All Systems Ready</div>', unsafe_allow_html=True)
-        else:
-            st.markdown(f'<div class="status-error">❌ Missing API Keys</div>', unsafe_allow_html=True)
-            st.error(f"Required: {', '.join(missing)}")
-            st.info("💡 Add keys to `.env` file and restart")
-            st.stop()
+        st.markdown('<div class="status-success">✅ All Systems Ready</div>', unsafe_allow_html=True)
+        st.caption(f"Using {st.session_state.ai_provider.upper()} for AI targeting")
 
         st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
@@ -488,18 +659,6 @@ def main():
 
     with tab1:
         # AI Company Targeting Tab (Primary Feature)
-        # Check if AI is available
-        if not os.getenv('OPENAI_API_KEY') and not os.getenv('GEMINI_API_KEY'):
-            st.warning("⚠️ AI Company Targeting requires an AI API key")
-            st.info("""
-            Add **ONE** of these to your `.env` file:
-            - `OPENAI_API_KEY=sk-...` (recommended)
-            - `GEMINI_API_KEY=...`
-
-            Then restart the app.
-            """)
-            st.stop()
-
         # Initialize clients
         if 'apollo' not in st.session_state:
             with st.spinner("Initializing API clients..."):
